@@ -1,0 +1,53 @@
+name: Build WinVM
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extrair projeto
+        run: unzip -q WinVM_completo.zip
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config python3-pip xz-utils
+          pip install --break-system-packages meson
+      - name: Compilar QEMU
+        working-directory: WinVM3
+        run: ANDROID_NDK_HOME=${{ steps.ndk.outputs.ndk-path }} bash tools/build-qemu-android.sh
+      - name: Logs em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-qemu
+          path: |
+            WinVM3/build-qemu/qemu/build/config.log
+            WinVM3/build-qemu/glib/_b/meson-logs/meson-log.txt
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qemu-android
+          path: WinVM3/out/
+      - name: Copiar para o app
+        working-directory: WinVM3
+        run: |
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/qemu-share
+          cp out/jniLibs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          cp out/assets/qemu-share/* app/src/main/assets/qemu-share/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Gerar APK
+        working-directory: WinVM3
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WinVM-apk
+          path: WinVM3/app/build/outputs/apk/debug/app-debug.apk
